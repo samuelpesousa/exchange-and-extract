@@ -1,0 +1,16 @@
+                                          Tabela "public.users"
+   Coluna   |            Tipo             | Ordenação | Pode ser nulo |              Padrão               
+------------+-----------------------------+-----------+---------------+-----------------------------------
+ id         | integer                     |           | not null      | nextval('users_id_seq'::regclass)
+ nome       | character varying(255)      |           | not null      | 
+ email      | character varying(255)      |           | not null      | 
+ senha      | character varying(255)      |           | not null      | 
+ created_at | timestamp without time zone |           |               | CURRENT_TIMESTAMP
+ updated_at | timestamp without time zone |           |               | CURRENT_TIMESTAMP
+Índices:
+    "users_pkey" PRIMARY KEY, btree (id)
+    "idx_users_email" btree (email)
+    "users_email_key" UNIQUE CONSTRAINT, btree (email)
+Gatilhos:
+    update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+

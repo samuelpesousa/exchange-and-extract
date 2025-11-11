@@ -5,9 +5,18 @@ import (
 	"fmt"
 	"golang-project/cambio"
 	"golang-project/server"
+	"os"
+	"time"
 )
 
 func main() {
+	if tz := os.Getenv("TZ"); tz != "" {
+		loc, err := time.LoadLocation(tz)
+		if err == nil {
+			time.Local = loc
+		}
+	}
+
 	// Flag para escolher o modo de execução
 	serverMode := flag.Bool("server", false, "Executar em modo servidor")
 	port := flag.String("port", "8080", "Porta do servidor")
@@ -15,7 +24,7 @@ func main() {
 
 	if *serverMode {
 		// Modo servidor - API REST + Interface React
-		server.StartServer(*port)
+		server.StartServerChi(*port)
 	} else {
 		// Modo CLI original
 		runCLIMode()
@@ -35,7 +44,6 @@ func runCLIMode() {
 
 	servico.ExibirTaxas()
 
-	// Exemplo de conversões
 	fmt.Println("\n=== EXEMPLOS DE CONVERSÃO ===")
 
 	conversoes := []struct {

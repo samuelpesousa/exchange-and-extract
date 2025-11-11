@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS transacoes_cambio (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Índices para melhorar performance de consultas
 CREATE INDEX idx_transacoes_data ON transacoes_cambio(data_transacao);
 CREATE INDEX idx_transacoes_tipo ON transacoes_cambio(tipo);
 CREATE INDEX idx_transacoes_moedas ON transacoes_cambio(moeda_origem, moeda_destino);

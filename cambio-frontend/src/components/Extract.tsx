@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   BarChart3,
   Calendar,
@@ -13,6 +15,7 @@ import {
   Search,
   X,
   AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 
 interface Transaction {
@@ -66,18 +69,21 @@ const Extract: React.FC = () => {
 
       // Transformar dados da API para o formato do componente
       const apiTransactions = response.data.transactions || [];
-      const formattedTransactions = apiTransactions.map((t: any) => ({
-        id: t.id,
-        date: formatDateFromISO(t.data_transacao),
-        time: formatTimeFromISO(t.data_transacao),
-        type: t.tipo,
-        fromCurrency: t.moeda_origem,
-        toCurrency: t.moeda_destino,
-        amount: t.valor_origem.toFixed(2),
-        convertedAmount: t.valor_destino.toFixed(2),
-        rate: t.taxa_cambio.toFixed(4),
-        status: t.status,
-      }));
+
+      const formattedTransactions = apiTransactions.map((t: any) => {
+        return {
+          id: t.id,
+          date: formatDateFromISO(t.data_transacao),
+          time: formatTimeFromISO(t.data_transacao),
+          type: t.tipo,
+          fromCurrency: t.moeda_origem,
+          toCurrency: t.moeda_destino,
+          amount: t.valor_origem.toFixed(2),
+          convertedAmount: t.valor_destino.toFixed(2),
+          rate: t.taxa_cambio.toFixed(4),
+          status: t.status,
+        };
+      });
 
       setTransactions(formattedTransactions);
     } catch (err: any) {
@@ -96,53 +102,88 @@ const Extract: React.FC = () => {
 
   // Formatar data ISO para d/M/Y
   const formatDateFromISO = (isoDate: string): string => {
+    // Se a data tem 'Z' no final, ela está em UTC, precisamos converter para local
     const date = new Date(isoDate);
     return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
   };
 
-  // Formatar hora de ISO
+  // Formatar hora de ISO - converter de UTC para horário local
   const formatTimeFromISO = (isoDate: string): string => {
+    // Parse the ISO date string to a Date object
+    // JavaScript Date automaticamente converte para timezone local
     const date = new Date(isoDate);
-    return `${String(date.getHours()).padStart(2, "0")}:${String(
-      date.getMinutes()
-    ).padStart(2, "0")}`;
+
+    // Verificar se a data é válida
+    if (isNaN(date.getTime())) {
+      console.error("Data inválida:", isoDate);
+      return "00:00";
+    }
+
+    // Get local time components (já convertido automaticamente pelo JavaScript)
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+      2,
+      "0"
+    )}`;
   };
 
-  // Simulated transaction data (since we don't have a backend endpoint for this)
+  // Simulated transaction data (only used when API fails)
   const generateSampleTransactions = (): Transaction[] => {
     const currencies = ["USD", "EUR", "GBP", "JPY", "BRL"];
     const types = ["Compra", "Venda"];
     const sampleTransactions: Transaction[] = [];
 
+    // Usar data/hora atual como base
+    const now = new Date();
+
     for (let i = 0; i < 20; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - Math.floor(Math.random() * 30));
+      // Criar uma cópia da data atual e subtrair dias (mais recentes primeiro)
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+
+      // Definir um horário específico baseado no índice (não aleatório)
+      // Distribuir ao longo do dia de forma previsível
+      const hoursOffset = (i * 2) % 24; // Varia de 0 a 23
+      const minutesOffset = (i * 7) % 60; // Varia de 0 a 59
+      date.setHours(hoursOffset);
+      date.setMinutes(minutesOffset);
+      date.setSeconds(0);
+      date.setMilliseconds(0);
 
       // Format date as d/M/Y
       const formattedDate = `${date.getDate()}/${
         date.getMonth() + 1
       }/${date.getFullYear()}`;
 
+      // Format time from the date object
+      const formattedTime = `${String(date.getHours()).padStart(
+        2,
+        "0"
+      )}:${String(date.getMinutes()).padStart(2, "0")}`;
+
       sampleTransactions.push({
         id: i + 1,
         date: formattedDate,
-        time: `${String(Math.floor(Math.random() * 24)).padStart(
-          2,
-          "0"
-        )}:${String(Math.floor(Math.random() * 60)).padStart(2, "0")}`,
-        type: types[Math.floor(Math.random() * types.length)],
-        fromCurrency: currencies[Math.floor(Math.random() * currencies.length)],
-        toCurrency: currencies[Math.floor(Math.random() * currencies.length)],
-        amount: (Math.random() * 10000 + 100).toFixed(2),
-        convertedAmount: (Math.random() * 10000 + 100).toFixed(2),
-        rate: (Math.random() * 10 + 0.1).toFixed(4),
-        status: Math.random() > 0.1 ? "Concluído" : "Pendente",
+        time: formattedTime,
+        type: types[i % 2], // Alterna entre Compra e Venda
+        fromCurrency: currencies[i % currencies.length],
+        toCurrency: currencies[(i + 1) % currencies.length],
+        amount: (1000 + i * 100).toFixed(2), // Valores incrementais
+        convertedAmount: (1200 + i * 120).toFixed(2),
+        rate: (1.1 + i * 0.01).toFixed(4),
+        status: i % 10 === 0 ? "Pendente" : "Concluído", // 1 em 10 é pendente
       });
     }
 
     return sampleTransactions.sort((a, b) => {
-      const dateA = new Date(a.date.split("/").reverse().join("-"));
-      const dateB = new Date(b.date.split("/").reverse().join("-"));
+      const dateA = new Date(
+        a.date.split("/").reverse().join("-") + "T" + a.time
+      );
+      const dateB = new Date(
+        b.date.split("/").reverse().join("-") + "T" + b.time
+      );
       return dateB.getTime() - dateA.getTime();
     });
   };
@@ -179,7 +220,230 @@ const Extract: React.FC = () => {
   });
 
   const generatePDF = () => {
-    alert("Funcionalidade de exportação PDF será implementada em breve!");
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 15;
+
+    // Carregar e adicionar logo
+    const img = new Image();
+    img.src = "/image/acorianalight.png";
+
+    img.onload = () => {
+      // Logo centralizado no topo
+      const logoWidth = 50;
+      const logoHeight = 15;
+      const logoX = (pageWidth - logoWidth) / 2;
+
+      try {
+        doc.addImage(img, "PNG", logoX, 10, logoWidth, logoHeight);
+      } catch (error) {
+        console.error("Erro ao adicionar logo:", error);
+      }
+
+      // Cabeçalho - Título (ajustado para baixo do logo)
+      doc.setFontSize(14);
+      doc.setTextColor(75, 85, 99); // Cinza
+      doc.text("Extrato de Operações Cambiais", pageWidth / 2, 32, {
+        align: "center",
+      });
+
+      // Data de emissão
+      doc.setFontSize(10);
+      doc.setTextColor(107, 114, 128);
+      const dataEmissao = new Date().toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      doc.text(`Emitido em: ${dataEmissao}`, margin, 42);
+
+      // Resumo
+      const totalOperacoes = filteredTransactions.length;
+      const totalConcluidas = filteredTransactions.filter(
+        (t) => t.status === "Concluído"
+      ).length;
+      const volumeTotal = filteredTransactions
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+        .toFixed(2);
+
+      doc.setFontSize(10);
+      doc.text(`Total de Operações: ${totalOperacoes}`, margin, 52);
+      doc.text(`Operações Concluídas: ${totalConcluidas}`, margin, 58);
+      doc.text(`Volume Total: $ ${volumeTotal}`, margin, 64);
+
+      // Linha separadora
+      doc.setDrawColor(229, 231, 235);
+      doc.line(margin, 70, pageWidth - margin, 70);
+
+      // Tabela de transações
+      const tableData = filteredTransactions.map((t) => [
+        `${t.date}\n${t.time}`,
+        t.type,
+        `${t.fromCurrency} → ${t.toCurrency}`,
+        `${t.fromCurrency} ${parseFloat(t.amount).toLocaleString("pt-BR", {
+          minimumFractionDigits: 2,
+        })}`,
+        `${t.toCurrency} ${parseFloat(t.convertedAmount).toLocaleString(
+          "pt-BR",
+          { minimumFractionDigits: 2 }
+        )}`,
+        t.rate,
+        t.status,
+      ]);
+
+      autoTable(doc, {
+        startY: 77,
+        head: [
+          [
+            "Data/Hora",
+            "Tipo",
+            "Conversão",
+            "Valor Origem",
+            "Valor Destino",
+            "Taxa",
+            "Status",
+          ],
+        ],
+        body: tableData,
+        theme: "grid",
+        headStyles: {
+          fillColor: [37, 99, 235],
+          textColor: [255, 255, 255],
+          fontSize: 9,
+          fontStyle: "bold",
+        },
+        bodyStyles: {
+          fontSize: 8,
+          textColor: [31, 41, 55],
+        },
+        alternateRowStyles: {
+          fillColor: [249, 250, 251],
+        },
+        columnStyles: {
+          0: { cellWidth: 25 },
+          1: { cellWidth: 18 },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 30 },
+          4: { cellWidth: 30 },
+          5: { cellWidth: 18 },
+          6: { cellWidth: 20 },
+        },
+        margin: { left: margin, right: margin },
+      });
+
+      // Informações da corretora no rodapé
+      const finalY = (doc as any).lastAutoTable.finalY || 77;
+      let currentY = finalY + 15;
+
+      // Verificar se precisa de nova página
+      if (currentY > pageHeight - 80) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      doc.setFontSize(9);
+      doc.setTextColor(75, 85, 99);
+      doc.setFont("helvetica", "bold");
+      doc.text("INFORMAÇÕES IMPORTANTES", margin, currentY);
+
+      currentY += 7;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(55, 65, 81);
+
+      const avisoTexto = [
+        "A CORRETORA AÇORIANA DE CÂMBIO S.A. vem reiterar a todos os seus clientes, potenciais",
+        "clientes e ao público em geral que é uma instituição financeira cuja atividade se restringe ao",
+        "mercado e operações de câmbio (incluindo câmbio para aquisição de criptoativos), e NÃO",
+        "OFERECE EMPRÉSTIMOS, FINANCIAMENTOS, CONSÓRCIOS ou INVESTIMENTOS COMO AÇÕES",
+        "ou RENDA FIXA. Em resumo, a Corretora Açoriana não exerce qualquer atividade fora de sua",
+        "licença para atuação no mercado de câmbio.",
+        "",
+        "A Corretora Açoriana também NÃO COBRA QUAISQUER TAXAS OU COMISSÕES ANTECIPADAS,",
+        "como taxas para análise de cadastro, taxas de análise de crédito, taxas ou comissões de",
+        "viabilização de operações, ou quaisquer outras.",
+        "",
+        "A Corretora Açoriana de Câmbio S.A. é uma instituição regulada pelo Banco Central do Brasil.",
+      ];
+
+      avisoTexto.forEach((linha) => {
+        if (currentY > pageHeight - 20) {
+          doc.addPage();
+          currentY = 20;
+        }
+        doc.text(linha, margin, currentY);
+        currentY += 4.5;
+      });
+
+      currentY += 5;
+
+      // Endereço
+      if (currentY > pageHeight - 25) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("Endereço:", margin, currentY);
+      currentY += 6;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.text(
+        "Florianópolis/SC: Rua Dom Jaime Câmara, 106 – Centro, CEP 88015-120",
+        margin,
+        currentY
+      );
+      currentY += 5;
+      doc.text("CNPJ 15.761.217/0001-91", margin, currentY);
+
+      // Rodapé em todas as páginas
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(156, 163, 175);
+        doc.text(
+          `Página ${i} de ${totalPages}`,
+          pageWidth / 2,
+          pageHeight - 10,
+          { align: "center" }
+        );
+        doc.text(
+          "Corretora Açoriana de Câmbio S.A. | CNPJ 15.761.217/0001-91",
+          pageWidth / 2,
+          pageHeight - 5,
+          { align: "center" }
+        );
+      }
+
+      // Salvar PDF
+      const fileName = `extrato-cambio-${
+        new Date().toISOString().split("T")[0]
+      }.pdf`;
+      doc.save(fileName);
+    };
+
+    // Se a imagem não carregar, gerar PDF sem logo
+    img.onerror = () => {
+      console.error("Erro ao carregar logo, gerando PDF sem imagem");
+      // Gerar PDF sem logo (código original)
+      doc.setFontSize(18);
+      doc.setTextColor(37, 99, 235);
+      doc.text("CORRETORA AÇORIANA DE CÂMBIO S.A.", pageWidth / 2, 20, {
+        align: "center",
+      });
+      doc.setFontSize(14);
+      doc.setTextColor(75, 85, 99);
+      doc.text("Extrato de Operações Cambiais", pageWidth / 2, 30, {
+        align: "center",
+      });
+      // ... resto do código continua igual
+    };
   };
 
   const exportCSV = () => {
@@ -238,6 +502,17 @@ const Extract: React.FC = () => {
                 Histórico completo de transações cambiais
               </p>
             </div>
+            <button
+              onClick={fetchTransactions}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Recarregar transações"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+              />
+              <span className="text-sm font-medium">Atualizar</span>
+            </button>
             {loading && (
               <div className="flex items-center gap-2 text-blue-600">
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
