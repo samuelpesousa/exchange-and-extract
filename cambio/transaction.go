@@ -5,6 +5,7 @@ import "time"
 // Transaction representa uma transação de câmbio realizada
 type Transaction struct {
 	ID            int       `json:"id"`
+	UserID        int       `json:"user_id"`
 	DataTransacao time.Time `json:"data_transacao"`
 	Tipo          string    `json:"tipo"` // "Compra" ou "Venda"
 	MoedaOrigem   string    `json:"moeda_origem"`
@@ -19,6 +20,7 @@ type Transaction struct {
 
 // TransactionFilter representa os filtros para buscar transações
 type TransactionFilter struct {
+	UserID       int        `json:"user_id,omitempty"`
 	DataInicio   *time.Time `json:"data_inicio,omitempty"`
 	DataFim      *time.Time `json:"data_fim,omitempty"`
 	Tipo         string     `json:"tipo,omitempty"`

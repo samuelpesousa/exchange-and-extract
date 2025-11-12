@@ -250,8 +250,19 @@ func (s *CambioServer) GetTransacoes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pegar user_id do contexto (middleware de autenticação)
+	userID, ok := r.Context().Value("user_id").(int)
+	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(ErrorResponse{Error: "Usuário não autenticado"})
+		return
+	}
+
 	// Parse query parameters para filtros
-	filter := cambio.TransactionFilter{}
+	filter := cambio.TransactionFilter{
+		UserID: userID, // Filtrar apenas transações do usuário logado
+	}
 
 	if dataInicio := r.URL.Query().Get("data_inicio"); dataInicio != "" {
 		t, err := time.Parse("2006-01-02", dataInicio)
@@ -337,6 +348,15 @@ func (s *CambioServer) PostTransacao(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pegar user_id do contexto (middleware de autenticação)
+	userID, ok := r.Context().Value("user_id").(int)
+	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(ErrorResponse{Error: "Usuário não autenticado"})
+		return
+	}
+
 	var req cambio.CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -362,6 +382,7 @@ func (s *CambioServer) PostTransacao(w http.ResponseWriter, r *http.Request) {
 
 	// Criar objeto de transação
 	transaction := &cambio.Transaction{
+		UserID:        userID, // Associar transação ao usuário logado
 		DataTransacao: time.Now(),
 		Tipo:          req.Tipo,
 		MoedaOrigem:   req.MoedaOrigem,

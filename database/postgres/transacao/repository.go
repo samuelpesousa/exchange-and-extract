@@ -23,9 +23,9 @@ func New(db *sql.DB) cambio.TransactionRepository {
 func (r *Repository) Create(transaction *cambio.Transaction) error {
 	query := `
 		INSERT INTO transacoes_cambio (
-			data_transacao, tipo, moeda_origem, moeda_destino,
+			user_id, data_transacao, tipo, moeda_origem, moeda_destino,
 			valor_origem, valor_destino, taxa_cambio, status
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at, updated_at
 	`
 
@@ -35,6 +35,7 @@ func (r *Repository) Create(transaction *cambio.Transaction) error {
 	err := r.db.QueryRowContext(
 		ctx,
 		query,
+		transaction.UserID,
 		transaction.DataTransacao,
 		transaction.Tipo,
 		transaction.MoedaOrigem,
@@ -55,7 +56,7 @@ func (r *Repository) Create(transaction *cambio.Transaction) error {
 // GetByID busca uma transação pelo ID
 func (r *Repository) GetByID(id int) (*cambio.Transaction, error) {
 	query := `
-		SELECT id, data_transacao, tipo, moeda_origem, moeda_destino,
+		SELECT id, user_id, data_transacao, tipo, moeda_origem, moeda_destino,
 		       valor_origem, valor_destino, taxa_cambio, status,
 		       created_at, updated_at
 		FROM transacoes_cambio
@@ -68,6 +69,7 @@ func (r *Repository) GetByID(id int) (*cambio.Transaction, error) {
 	var transaction cambio.Transaction
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&transaction.ID,
+		&transaction.UserID,
 		&transaction.DataTransacao,
 		&transaction.Tipo,
 		&transaction.MoedaOrigem,
@@ -94,7 +96,7 @@ func (r *Repository) GetByID(id int) (*cambio.Transaction, error) {
 // GetAll busca todas as transações com filtros opcionais
 func (r *Repository) GetAll(filter cambio.TransactionFilter) ([]cambio.Transaction, error) {
 	query := `
-		SELECT id, data_transacao, tipo, moeda_origem, moeda_destino,
+		SELECT id, user_id, data_transacao, tipo, moeda_origem, moeda_destino,
 		       valor_origem, valor_destino, taxa_cambio, status,
 		       created_at, updated_at
 		FROM transacoes_cambio
@@ -103,6 +105,13 @@ func (r *Repository) GetAll(filter cambio.TransactionFilter) ([]cambio.Transacti
 
 	var args []interface{}
 	argCount := 1
+
+	// Filtrar por usuário
+	if filter.UserID > 0 {
+		query += fmt.Sprintf(" AND user_id = $%d", argCount)
+		args = append(args, filter.UserID)
+		argCount++
+	}
 
 	// Adicionar filtros dinamicamente
 	if filter.DataInicio != nil {
@@ -171,6 +180,7 @@ func (r *Repository) GetAll(filter cambio.TransactionFilter) ([]cambio.Transacti
 		var t cambio.Transaction
 		err := rows.Scan(
 			&t.ID,
+			&t.UserID,
 			&t.DataTransacao,
 			&t.Tipo,
 			&t.MoedaOrigem,
@@ -270,6 +280,13 @@ func (r *Repository) GetTotalCount(filter cambio.TransactionFilter) (int, error)
 
 	var args []interface{}
 	argCount := 1
+
+	// Filtrar por usuário
+	if filter.UserID > 0 {
+		query += fmt.Sprintf(" AND user_id = $%d", argCount)
+		args = append(args, filter.UserID)
+		argCount++
+	}
 
 	// Aplicar os mesmos filtros usados em GetAll
 	if filter.DataInicio != nil {
