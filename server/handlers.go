@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"golang-project/cambio"
+	"golang-project/utils"
 )
 
 type CambioServer struct {
@@ -267,14 +268,14 @@ func (s *CambioServer) GetTransacoes(w http.ResponseWriter, r *http.Request) {
 	if dataInicio := r.URL.Query().Get("data_inicio"); dataInicio != "" {
 		t, err := time.Parse("2006-01-02", dataInicio)
 		if err == nil {
-			filter.DataInicio = &t
+			filter.DataInicio = utils.TimePointer(t)
 		}
 	}
 
 	if dataFim := r.URL.Query().Get("data_fim"); dataFim != "" {
 		t, err := time.Parse("2006-01-02", dataFim)
 		if err == nil {
-			filter.DataFim = &t
+			filter.DataFim = utils.TimePointer(t)
 		}
 	}
 

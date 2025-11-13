@@ -7,13 +7,13 @@ type Transaction struct {
 	ID            int       `json:"id"`
 	UserID        int       `json:"user_id"`
 	DataTransacao time.Time `json:"data_transacao"`
-	Tipo          string    `json:"tipo"` // "Compra" ou "Venda"
+	Tipo          string    `json:"tipo"`
 	MoedaOrigem   string    `json:"moeda_origem"`
 	MoedaDestino  string    `json:"moeda_destino"`
 	ValorOrigem   float64   `json:"valor_origem"`
 	ValorDestino  float64   `json:"valor_destino"`
 	TaxaCambio    float64   `json:"taxa_cambio"`
-	Status        string    `json:"status"` // "Concluído", "Pendente", "Cancelado"
+	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }

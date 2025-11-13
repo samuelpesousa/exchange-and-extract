@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import authService from "../services/authService";
 import {
   BarChart3,
   Calendar,
@@ -225,6 +226,11 @@ const Extract: React.FC = () => {
     const pageHeight = doc.internal.pageSize.height;
     const margin = 15;
 
+    // Obter dados do usuário
+    const currentUser = authService.getCurrentUser();
+    const userName = currentUser?.nome || "Usuário";
+    const userEmail = currentUser?.email || "";
+
     // Carregar e adicionar logo
     const img = new Image();
     img.src = "/image/acorianalight.png";
@@ -248,6 +254,24 @@ const Extract: React.FC = () => {
         align: "center",
       });
 
+      // Dados do Cliente
+      doc.setFontSize(10);
+      doc.setTextColor(37, 99, 235); // Azul
+      doc.setFont("helvetica", "bold");
+      doc.text("Cliente:", margin, 42);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(31, 41, 55);
+      doc.text(userName, margin + 15, 42);
+
+      if (userEmail) {
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(37, 99, 235);
+        doc.text("E-mail:", margin, 48);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(31, 41, 55);
+        doc.text(userEmail, margin + 15, 48);
+      }
+
       // Data de emissão
       doc.setFontSize(10);
       doc.setTextColor(107, 114, 128);
@@ -258,7 +282,7 @@ const Extract: React.FC = () => {
         hour: "2-digit",
         minute: "2-digit",
       });
-      doc.text(`Emitido em: ${dataEmissao}`, margin, 42);
+      doc.text(`Emitido em: ${dataEmissao}`, margin, userEmail ? 54 : 48);
 
       // Resumo
       const totalOperacoes = filteredTransactions.length;
@@ -269,14 +293,21 @@ const Extract: React.FC = () => {
         .reduce((sum, t) => sum + parseFloat(t.amount), 0)
         .toFixed(2);
 
+      const summaryY = userEmail ? 64 : 58;
       doc.setFontSize(10);
-      doc.text(`Total de Operações: ${totalOperacoes}`, margin, 52);
-      doc.text(`Operações Concluídas: ${totalConcluidas}`, margin, 58);
-      doc.text(`Volume Total: $ ${volumeTotal}`, margin, 64);
+      doc.setTextColor(31, 41, 55);
+      doc.text(`Total de Operações: ${totalOperacoes}`, margin, summaryY);
+      doc.text(
+        `Operações Concluídas: ${totalConcluidas}`,
+        margin,
+        summaryY + 6
+      );
+      doc.text(`Volume Total: $ ${volumeTotal}`, margin, summaryY + 12);
 
       // Linha separadora
+      const lineY = summaryY + 18;
       doc.setDrawColor(229, 231, 235);
-      doc.line(margin, 70, pageWidth - margin, 70);
+      doc.line(margin, lineY, pageWidth - margin, lineY);
 
       // Tabela de transações
       const tableData = filteredTransactions.map((t) => [
@@ -294,8 +325,9 @@ const Extract: React.FC = () => {
         t.status,
       ]);
 
+      const tableStartY = lineY + 7;
       autoTable(doc, {
-        startY: 77,
+        startY: tableStartY,
         head: [
           [
             "Data/Hora",

@@ -64,9 +64,7 @@ const LoginSimple: React.FC<LoginProps> = ({ onLogin, onShowRegister }) => {
                 target.style.display = "none";
               }}
             />
-            <h1 className="text-2xl font-bold text-white">
-              Bem-vindo de volta
-            </h1>
+            <h1 className="text-2xl font-bold text-white">Seja Bem Vindo</h1>
             <p className="text-blue-100 mt-2">
               Acesse sua conta para continuar
             </p>
