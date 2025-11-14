@@ -101,10 +101,10 @@ func StartServerChi(port string) {
 	fs := http.FileServer(http.Dir("./build/"))
 	r.Handle("/*", fs)
 
-	fmt.Printf("🚀 Servidor iniciado na porta %s\n", port)
-	fmt.Printf("📡 API disponível em: http://localhost:%s/api\n", port)
-	fmt.Printf("🌐 Interface React em: http://localhost:%s\n", port)
-	fmt.Println("🔐 Autenticação habilitada com JWT")
+	fmt.Printf("Servidor iniciado na porta %s\n", port)
+	fmt.Printf("API disponível em: http://localhost:%s/api\n", port)
+	fmt.Printf("Interface React em: http://localhost:%s\n", port)
+	fmt.Println("Autenticação habilitada com JWT")
 
 	log.Fatal(http.ListenAndServe(":"+port, r))
 }

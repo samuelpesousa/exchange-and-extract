@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -87,26 +88,53 @@ func (c *CambioClient) BuscarTaxasParaTodasMoedas() (map[string]map[string]float
 	moedas := []string{"USD", "EUR", "BRL", "GBP", "JPY"}
 	taxasCompletas := make(map[string]map[string]float64)
 
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	errors := make(chan error, len(moedas))
+
 	for _, moedaBase := range moedas {
-		fmt.Printf("Buscando taxas para %s...\n", moedaBase)
+		wg.Add(1)
+		go func(moeda string) {
+			defer wg.Done()
 
-		taxas, err := c.BuscarTaxasCambio(moedaBase)
-		if err != nil {
-			return nil, fmt.Errorf("erro ao buscar taxas para %s: %w", moedaBase, err)
-		}
+			fmt.Printf("Buscando taxas para %s...\n", moeda)
 
-		taxasFiltradas := make(map[string]float64)
-		for _, moedaDestino := range moedas {
-			if moedaDestino != moedaBase {
-				if taxa, existe := taxas[moedaDestino]; existe {
-					taxasFiltradas[moedaDestino] = taxa
+			taxas, err := c.BuscarTaxasCambio(moeda)
+			if err != nil {
+				errors <- fmt.Errorf("erro ao buscar taxas para %s: %w", moeda, err)
+				return
+			}
+
+			taxasFiltradas := make(map[string]float64)
+			for _, moedaDestino := range moedas {
+				if moedaDestino != moeda {
+					if taxa, existe := taxas[moedaDestino]; existe {
+						taxasFiltradas[moedaDestino] = taxa
+					}
 				}
 			}
+
+			mu.Lock()
+			taxasCompletas[moeda] = taxasFiltradas
+			mu.Unlock()
+
+			// Sleep para evitar rate limiting (menor que antes pois é paralelo)
+			time.Sleep(100 * time.Millisecond)
+		}(moedaBase)
+	}
+
+	// Aguardar todas as goroutines terminarem
+	wg.Wait()
+	close(errors)
+
+	// Verificar se houve algum erro
+	select {
+	case err := <-errors:
+		if err != nil {
+			return nil, err
 		}
-
-		taxasCompletas[moedaBase] = taxasFiltradas
-
-		time.Sleep(200 * time.Millisecond)
+	default:
+		// Nenhum erro
 	}
 
 	return taxasCompletas, nil

@@ -27,6 +27,47 @@ type ConversaoRequest struct {
 	MoedaDestino string  `json:"moedaDestino"`
 }
 
+// Validate valida os campos da requisição de conversão
+func (r *ConversaoRequest) Validate() error {
+	var errs utils.ValidationErrors
+
+	if !utils.IsPositive(r.Valor) {
+		errs = append(errs, utils.ValidationError{
+			Field:   "valor",
+			Message: "deve ser maior que zero",
+		})
+	}
+
+	if utils.IsEmpty(r.MoedaOrigem) {
+		errs = append(errs, utils.ValidationError{
+			Field:   "moedaOrigem",
+			Message: "é obrigatória",
+		})
+	} else if !utils.IsValidCurrency(r.MoedaOrigem) {
+		errs = append(errs, utils.ValidationError{
+			Field:   "moedaOrigem",
+			Message: "moeda inválida (use: USD, EUR, BRL, GBP, JPY)",
+		})
+	}
+
+	if utils.IsEmpty(r.MoedaDestino) {
+		errs = append(errs, utils.ValidationError{
+			Field:   "moedaDestino",
+			Message: "é obrigatória",
+		})
+	} else if !utils.IsValidCurrency(r.MoedaDestino) {
+		errs = append(errs, utils.ValidationError{
+			Field:   "moedaDestino",
+			Message: "moeda inválida (use: USD, EUR, BRL, GBP, JPY)",
+		})
+	}
+
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+
 type ConversaoResponse struct {
 	ValorOriginal   float64 `json:"valorOriginal"`
 	ValorConvertido float64 `json:"valorConvertido"`
@@ -42,6 +83,18 @@ type TaxasResponse struct {
 
 type ErrorResponse struct {
 	Error string `json:"error"`
+}
+
+// respondJSON envia resposta JSON
+func (s *CambioServer) respondJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+// respondError envia resposta de erro JSON
+func (s *CambioServer) respondError(w http.ResponseWriter, status int, message string) {
+	s.respondJSON(w, status, ErrorResponse{Error: message})
 }
 
 // CORS middleware
@@ -65,9 +118,7 @@ func (s *CambioServer) GetTaxas(w http.ResponseWriter, r *http.Request) {
 
 	taxas, err := s.servico.ObterTaxasAtualizadas()
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -76,9 +127,7 @@ func (s *CambioServer) GetTaxas(w http.ResponseWriter, r *http.Request) {
 		Status: "success",
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // POST /api/converter - Converter valor entre moedas
@@ -95,17 +144,19 @@ func (s *CambioServer) PostConverter(w http.ResponseWriter, r *http.Request) {
 
 	var req ConversaoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid JSON"})
+		s.respondError(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+
+	// Validar requisição
+	if err := req.Validate(); err != nil {
+		s.respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	valorConvertido, err := s.servico.CalcularConversaoComAPI(req.Valor, req.MoedaOrigem, req.MoedaDestino)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -123,9 +174,7 @@ func (s *CambioServer) PostConverter(w http.ResponseWriter, r *http.Request) {
 		Taxa:            taxa,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // GET /api/converter?valor=100&origem=USD&destino=BRL - Converter via query params
@@ -140,25 +189,31 @@ func (s *CambioServer) GetConverter(w http.ResponseWriter, r *http.Request) {
 	destino := r.URL.Query().Get("destino")
 
 	if valorStr == "" || origem == "" || destino == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Parâmetros obrigatórios: valor, origem, destino"})
+		s.respondError(w, http.StatusBadRequest, "Parâmetros obrigatórios: valor, origem, destino")
 		return
 	}
 
 	valor, err := strconv.ParseFloat(valorStr, 64)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Valor deve ser um número válido"})
+		s.respondError(w, http.StatusBadRequest, "Valor deve ser um número válido")
+		return
+	}
+
+	// Validar usando a mesma lógica
+	req := ConversaoRequest{
+		Valor:        valor,
+		MoedaOrigem:  origem,
+		MoedaDestino: destino,
+	}
+
+	if err := req.Validate(); err != nil {
+		s.respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	valorConvertido, err := s.servico.CalcularConversaoComAPI(valor, origem, destino)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -176,9 +231,7 @@ func (s *CambioServer) GetConverter(w http.ResponseWriter, r *http.Request) {
 		Taxa:            taxa,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // POST /api/atualizar - Forçar atualização das taxas
@@ -195,9 +248,7 @@ func (s *CambioServer) PostAtualizar(w http.ResponseWriter, r *http.Request) {
 
 	taxas, err := s.servico.ForcarAtualizacao()
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -206,9 +257,7 @@ func (s *CambioServer) PostAtualizar(w http.ResponseWriter, r *http.Request) {
 		Status: "updated",
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // DELETE /api/cache - Limpar cache
@@ -225,15 +274,11 @@ func (s *CambioServer) DeleteCache(w http.ResponseWriter, r *http.Request) {
 
 	err := s.servico.LimparCache()
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "cache cleared"})
+	s.respondJSON(w, http.StatusOK, map[string]string{"status": "cache cleared"})
 }
 
 // GET /api/transacoes - Listar transações com filtros
@@ -245,18 +290,14 @@ func (s *CambioServer) GetTransacoes(w http.ResponseWriter, r *http.Request) {
 
 	// Se não houver repository configurado, retornar erro
 	if s.transactionRepo == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Serviço de transações não configurado"})
+		s.respondError(w, http.StatusServiceUnavailable, "Serviço de transações não configurado")
 		return
 	}
 
 	// Pegar user_id do contexto (middleware de autenticação)
 	userID, ok := r.Context().Value("user_id").(int)
 	if !ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Usuário não autenticado"})
+		s.respondError(w, http.StatusUnauthorized, "Usuário não autenticado")
 		return
 	}
 
@@ -302,18 +343,14 @@ func (s *CambioServer) GetTransacoes(w http.ResponseWriter, r *http.Request) {
 	// Buscar transações
 	transactions, err := s.transactionRepo.GetAll(filter)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Buscar total de registros
 	total, err := s.transactionRepo.GetTotalCount(filter)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -324,9 +361,7 @@ func (s *CambioServer) GetTransacoes(w http.ResponseWriter, r *http.Request) {
 		"offset":       filter.Offset,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // POST /api/transacoes - Criar nova transação
@@ -343,35 +378,27 @@ func (s *CambioServer) PostTransacao(w http.ResponseWriter, r *http.Request) {
 
 	// Se não houver repository configurado, retornar erro
 	if s.transactionRepo == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Serviço de transações não configurado"})
+		s.respondError(w, http.StatusServiceUnavailable, "Serviço de transações não configurado")
 		return
 	}
 
 	// Pegar user_id do contexto (middleware de autenticação)
 	userID, ok := r.Context().Value("user_id").(int)
 	if !ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Usuário não autenticado"})
+		s.respondError(w, http.StatusUnauthorized, "Usuário não autenticado")
 		return
 	}
 
 	var req cambio.CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid JSON"})
+		s.respondError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
 
 	// Calcular o valor convertido usando o serviço de câmbio
 	valorDestino, err := s.servico.CalcularConversaoComAPI(req.ValorOrigem, req.MoedaOrigem, req.MoedaDestino)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Erro ao calcular conversão: " + err.Error()})
+		s.respondError(w, http.StatusInternalServerError, "Erro ao calcular conversão: "+err.Error())
 		return
 	}
 
@@ -397,15 +424,11 @@ func (s *CambioServer) PostTransacao(w http.ResponseWriter, r *http.Request) {
 	// Salvar no banco de dados
 	err = s.transactionRepo.Create(transaction)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Erro ao salvar transação: " + err.Error()})
+		s.respondError(w, http.StatusInternalServerError, "Erro ao salvar transação: "+err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(transaction)
+	s.respondJSON(w, http.StatusCreated, transaction)
 }
 
 // GET /api/transacoes/:id - Buscar transação por ID
@@ -417,9 +440,7 @@ func (s *CambioServer) GetTransacaoByID(w http.ResponseWriter, r *http.Request) 
 
 	// Se não houver repository configurado, retornar erro
 	if s.transactionRepo == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Serviço de transações não configurado"})
+		s.respondError(w, http.StatusServiceUnavailable, "Serviço de transações não configurado")
 		return
 	}
 
@@ -427,21 +448,15 @@ func (s *CambioServer) GetTransacaoByID(w http.ResponseWriter, r *http.Request) 
 	idStr := r.URL.Path[len("/api/transacoes/"):]
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "ID inválido"})
+		s.respondError(w, http.StatusBadRequest, "ID inválido")
 		return
 	}
 
 	transaction, err := s.transactionRepo.GetByID(id)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		s.respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(transaction)
+	s.respondJSON(w, http.StatusOK, transaction)
 }
