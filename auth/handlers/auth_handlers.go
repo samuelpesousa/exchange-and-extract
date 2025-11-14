@@ -19,6 +19,18 @@ func NewAuthHandlers(authService *service.AuthService) *AuthHandlers {
 	}
 }
 
+// respondJSON envia resposta JSON
+func (h *AuthHandlers) respondJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+// respondError envia resposta de erro JSON
+func (h *AuthHandlers) respondError(w http.ResponseWriter, status int, message string) {
+	h.respondJSON(w, status, map[string]string{"error": message})
+}
+
 // Register handler para registro de novos usuários
 func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	log.Printf("📝 Requisição de registro recebida")
@@ -26,22 +38,16 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	var req user.UserRegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("❌ Erro ao decodificar JSON: %v", err)
-		http.Error(w, "Dados inválidos", http.StatusBadRequest)
+		h.respondError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
 
 	log.Printf("📧 Email: %s, Nome: %s", req.Email, req.Nome)
 
-	// Validações básicas
-	if req.Email == "" || req.Password == "" || req.Nome == "" {
-		log.Printf("❌ Campos obrigatórios vazios")
-		http.Error(w, "Email, senha e nome são obrigatórios", http.StatusBadRequest)
-		return
-	}
-
-	if len(req.Password) < 6 {
-		log.Printf("❌ Senha muito curta")
-		http.Error(w, "A senha deve ter no mínimo 6 caracteres", http.StatusBadRequest)
+	// Validar requisição usando validação centralizada
+	if err := req.Validate(); err != nil {
+		log.Printf("❌ Erro de validação: %v", err)
+		h.respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -51,18 +57,16 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("❌ Erro no registro: %v", err)
 		if err == user.ErrEmailAlreadyExists {
-			http.Error(w, "Email já cadastrado", http.StatusConflict)
+			h.respondError(w, http.StatusConflict, "Email já cadastrado")
 			return
 		}
-		http.Error(w, "Erro ao criar usuário: "+err.Error(), http.StatusInternalServerError)
+		h.respondError(w, http.StatusInternalServerError, "Erro ao criar usuário: "+err.Error())
 		return
 	}
 
 	log.Printf("✅ Usuário registrado com sucesso: ID=%d", newUser.ID)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	h.respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"message": "Usuário criado com sucesso",
 		"user":    newUser,
 	})
@@ -72,7 +76,13 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	var req user.UserLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Dados inválidos", http.StatusBadRequest)
+		h.respondError(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+
+	// Validar requisição usando validação centralizada
+	if err := req.Validate(); err != nil {
+		h.respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -80,10 +90,10 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	token, authenticatedUser, err := h.authService.Login(req.Email, req.Password)
 	if err != nil {
 		if err == user.ErrInvalidCredentials {
-			http.Error(w, "Email ou senha inválidos", http.StatusUnauthorized)
+			h.respondError(w, http.StatusUnauthorized, "Email ou senha inválidos")
 			return
 		}
-		http.Error(w, "Erro ao fazer login", http.StatusInternalServerError)
+		h.respondError(w, http.StatusInternalServerError, "Erro ao fazer login")
 		return
 	}
 
@@ -93,8 +103,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		User:  *authenticatedUser,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	h.respondJSON(w, http.StatusOK, response)
 }
 
 // Me retorna os dados do usuário autenticado
@@ -105,23 +114,21 @@ func (h *AuthHandlers) Me(w http.ResponseWriter, r *http.Request) {
 	// Buscar usuário
 	foundUser, err := h.authService.GetUserFromToken("")
 	if err != nil {
-		http.Error(w, "Usuário não encontrado", http.StatusNotFound)
+		h.respondError(w, http.StatusNotFound, "Usuário não encontrado")
 		return
 	}
 
 	if foundUser.ID != userID {
-		http.Error(w, "Não autorizado", http.StatusUnauthorized)
+		h.respondError(w, http.StatusUnauthorized, "Não autorizado")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(foundUser)
+	h.respondJSON(w, http.StatusOK, foundUser)
 }
 
 // Logout (no lado do servidor, apenas retorna sucesso, o cliente deve descartar o token)
 func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	h.respondJSON(w, http.StatusOK, map[string]string{
 		"message": "Logout realizado com sucesso",
 	})
 }

@@ -395,6 +395,12 @@ func (s *CambioServer) PostTransacao(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validar requisição usando validação centralizada
+	if err := req.Validate(); err != nil {
+		s.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Calcular o valor convertido usando o serviço de câmbio
 	valorDestino, err := s.servico.CalcularConversaoComAPI(req.ValorOrigem, req.MoedaOrigem, req.MoedaDestino)
 	if err != nil {
@@ -402,7 +408,6 @@ func (s *CambioServer) PostTransacao(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Calcular taxa
 	taxa := valorDestino / req.ValorOrigem
 	if req.ValorOrigem == 0 {
 		taxa = 0
